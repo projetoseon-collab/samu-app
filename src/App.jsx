@@ -31,18 +31,12 @@ function buildWA(f){
 
 // ─── AI extract ───────────────────────────────────────────────────────────────
 async function extractPhoto(b64,mime){
-  const res=await fetch("https://api.anthropic.com/v1/messages",{
+  const res=await fetch("/api/extract",{
     method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,
-      messages:[{role:"user",content:[
-        {type:"image",source:{type:"base64",media_type:mime,data:b64}},
-        {type:"text",text:`Analise esta imagem de relatório SAMU. Retorne SOMENTE JSON válido sem markdown:\n{"numero":"","data":"dd/mm/aaaa","horaChamado":"HH:MM","horaChegada":"HH:MM","horaHospital":"HH:MM","horaLiberacao":"HH:MM","base":"","viatura":"","endereco":"","bairro":"","tipo":"","pacienteNome":"","pacienteIdade":"","pacienteSexo":"M ou F","queixa":"","conduta":"","destino":"","desfecho":"","medico":"","enfermeiro":"","socorrista":"","motorista":"","status":"Finalizado","obs":""}`}
-      ]}]
-    })
+    body:JSON.stringify({image:b64,mimeType:mime||"image/jpeg"})
   });
-  const d=await res.json();
-  const txt=d.content?.find(b=>b.type==="text")?.text||"{}";
-  try{return JSON.parse(txt.replace(/```json|```/g,"").trim());}catch{return {};}
+  if(!res.ok)throw new Error("API error "+res.status);
+  return await res.json();
 }
 
 const todayStr=()=>new Date().toLocaleDateString("pt-BR");
@@ -202,15 +196,37 @@ function Drawer({open,onClose,page,onNav,user,onLogout}){
 }
 
 // ─── Login ────────────────────────────────────────────────────────────────────
-function LoginPage({users,onLogin}){
+function LoginPage({users,onLogin,onRegister}){
+  const [mode,setMode]=useState("login"); // "login" | "register"
   const [email,setEmail]=useState("");
   const [senha,setSenha]=useState("");
+  const [nome,setNome]=useState("");
+  const [confirma,setConfirma]=useState("");
   const [err,setErr]=useState("");
-  const submit=()=>{
-    const u=users.find(u=>u.email===email&&u.senha===senha);
+  const [ok,setOk]=useState("");
+
+  const inpS={width:"100%",padding:"14px 16px",border:"none",borderRadius:RADIUS,fontSize:15,color:TEXT,background:INPUT_BG,boxSizing:"border-box",outline:"none"};
+
+  const login=()=>{
+    setErr("");
+    const u=users.find(u=>u.email===email.trim().toLowerCase()&&u.senha===senha);
     if(u)onLogin(u);
     else setErr("E-mail ou senha incorretos.");
   };
+
+  const register=()=>{
+    setErr("");
+    if(!nome.trim())return setErr("Informe seu nome.");
+    if(!email.includes("@"))return setErr("E-mail inválido.");
+    if(senha.length<6)return setErr("Senha deve ter pelo menos 6 caracteres.");
+    if(senha!==confirma)return setErr("Senhas não coincidem.");
+    if(users.find(u=>u.email===email.trim().toLowerCase()))return setErr("E-mail já cadastrado.");
+    const novoUser={email:email.trim().toLowerCase(),senha,nome:nome.trim()};
+    onRegister(novoUser);
+    setOk("Conta criada! Faça login.");
+    setMode("login");setSenha("");setConfirma("");setNome("");
+  };
+
   return(
     <div style={{minHeight:"100vh",background:BG,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"24px 20px"}}>
       <div style={{textAlign:"center",marginBottom:28}}>
@@ -219,28 +235,39 @@ function LoginPage({users,onLogin}){
         <div style={{color:MUTED,fontSize:15,marginTop:2}}>Gestão de Atendimentos</div>
       </div>
       <div style={{background:WHITE,borderRadius:20,padding:"28px 24px",width:"100%",maxWidth:420,boxShadow:"0 4px 24px rgba(0,0,0,.06)"}}>
-        <div style={{fontSize:22,fontWeight:800,color:TEXT,marginBottom:4}}>Entrar</div>
-        <div style={{color:MUTED,fontSize:14,marginBottom:24}}>Faça login para acessar o sistema</div>
+        <div style={{fontSize:22,fontWeight:800,color:TEXT,marginBottom:4}}>{mode==="login"?"Entrar":"Criar conta"}</div>
+        <div style={{color:MUTED,fontSize:14,marginBottom:24}}>{mode==="login"?"Faça login para acessar o sistema":"Preencha os dados para se cadastrar"}</div>
         {err&&<div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10,padding:"10px 14px",color:"#dc2626",fontSize:13,marginBottom:16}}>{err}</div>}
+        {ok&&<div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:10,padding:"10px 14px",color:"#16a34a",fontSize:13,marginBottom:16}}>{ok}</div>}
+
+        {mode==="register"&&(
+          <div style={{marginBottom:16}}>
+            <label style={{display:"block",fontSize:14,fontWeight:500,color:TEXT,marginBottom:6}}>Nome completo</label>
+            <input value={nome} onChange={e=>setNome(e.target.value)} placeholder="Seu nome" style={inpS}/>
+          </div>
+        )}
         <div style={{marginBottom:16}}>
           <label style={{display:"block",fontSize:14,fontWeight:500,color:TEXT,marginBottom:6}}>E-mail</label>
-          <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="seu@email.com" type="email"
-            style={{width:"100%",padding:"14px 16px",border:"none",borderRadius:RADIUS,fontSize:15,color:TEXT,background:INPUT_BG,boxSizing:"border-box",outline:"none"}}/>
+          <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="seu@email.com" type="email" style={inpS}/>
         </div>
-        <div style={{marginBottom:24}}>
+        <div style={{marginBottom:mode==="register"?16:24}}>
           <label style={{display:"block",fontSize:14,fontWeight:500,color:TEXT,marginBottom:6}}>Senha</label>
-          <input value={senha} onChange={e=>setSenha(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()} placeholder="••••••••" type="password"
-            style={{width:"100%",padding:"14px 16px",border:"none",borderRadius:RADIUS,fontSize:15,color:TEXT,background:INPUT_BG,boxSizing:"border-box",outline:"none"}}/>
+          <input value={senha} onChange={e=>setSenha(e.target.value)} onKeyDown={e=>e.key==="Enter"&&(mode==="login"?login():register())} placeholder="••••••••" type="password" style={inpS}/>
         </div>
-        <button onClick={submit} style={{width:"100%",padding:"15px",background:NAVY,color:"#fff",border:"none",borderRadius:RADIUS,fontWeight:700,fontSize:16,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-          → Entrar
+        {mode==="register"&&(
+          <div style={{marginBottom:24}}>
+            <label style={{display:"block",fontSize:14,fontWeight:500,color:TEXT,marginBottom:6}}>Confirmar senha</label>
+            <input value={confirma} onChange={e=>setConfirma(e.target.value)} onKeyDown={e=>e.key==="Enter"&&register()} placeholder="••••••••" type="password" style={inpS}/>
+          </div>
+        )}
+        <button onClick={mode==="login"?login:register}
+          style={{width:"100%",padding:"15px",background:NAVY,color:"#fff",border:"none",borderRadius:RADIUS,fontWeight:700,fontSize:16,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:12}}>
+          {mode==="login"?"→ Entrar":"✓ Criar conta"}
         </button>
-        <div style={{textAlign:"center",marginTop:16,color:MUTED,fontSize:14}}>
-          Não tem conta? <span style={{color:ORANGE,fontWeight:600}}>Cadastre-se</span>
-        </div>
-        <div style={{marginTop:20,background:INPUT_BG,borderRadius:10,padding:"10px 14px",fontSize:12,color:MUTED,textAlign:"center"}}>
-          Demo: <strong>admin@samu.com</strong> / <strong>samu2024</strong>
-        </div>
+        <button onClick={()=>{setMode(mode==="login"?"register":"login");setErr("");setOk("");}}
+          style={{width:"100%",padding:"13px",background:"transparent",color:ORANGE,border:`1.5px solid ${ORANGE}`,borderRadius:RADIUS,fontWeight:600,fontSize:15,cursor:"pointer"}}>
+          {mode==="login"?"Não tem conta? Cadastre-se":"Já tenho conta — Entrar"}
+        </button>
       </div>
     </div>
   );
@@ -805,7 +832,7 @@ export default function App(){
   if(!user) return(
     <div style={{maxWidth:480,margin:"0 auto"}}>
       <style>{`*{box-sizing:border-box;}body{margin:0;}`}</style>
-      <LoginPage users={users} onLogin={setUser}/>
+      <LoginPage users={users} onLogin={setUser} onRegister={async(u)=>{const upd=[...users,u];setUsers(upd);await ss(SK.usr,upd);}}/>
     </div>
   );
 
